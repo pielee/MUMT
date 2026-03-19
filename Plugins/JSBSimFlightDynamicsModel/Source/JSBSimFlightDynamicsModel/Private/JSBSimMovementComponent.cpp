@@ -68,6 +68,28 @@ protected:
 };
 LStream Stream;
 
+namespace
+{
+FTransform BuildESUTangentTransform(AGeoReferencingSystem* GeoReferencingSystem, const FVector& ECEFLocation)
+{
+  if (!GeoReferencingSystem)
+  {
+    return FTransform::Identity;
+  }
+
+  FVector East;
+  FVector North;
+  FVector Up;
+  FVector UEOrigin;
+  GeoReferencingSystem->GetENUVectorsAtECEFLocation(ECEFLocation, East, North, Up);
+  GeoReferencingSystem->ECEFToEngine(ECEFLocation, UEOrigin);
+
+  // Unreal's left-handed tangent frame is East-South-Up, not East-North-Up.
+  FMatrix ESUMatrix(East, -North, Up, UEOrigin);
+  return FTransform(ESUMatrix);
+}
+}
+
 
 ////// Constructor
 UJSBSimMovementComponent::UJSBSimMovementComponent()
@@ -257,8 +279,10 @@ double UJSBSimMovementComponent::GetAGLevel(const FVector& StartECEFLocation, FV
   }
 
   // Get local Up vector at the query ECEF Location
-  FTransform TangentTransform = GeoReferencingSystem->GetTangentTransformAtECEFLocation(StartECEFLocation);
-  FVector Up = TangentTransform.TransformVector(FVector::ZAxisVector);
+  FVector East;
+  FVector North;
+  FVector Up;
+  GeoReferencingSystem->GetENUVectorsAtECEFLocation(StartECEFLocation, East, North, Up);
 
   // Compute the raycast Origin point
   FVector StartEngineLocation;
@@ -353,10 +377,10 @@ void UJSBSimMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
       if (Parent)
       {
         // Computes Rotation in engine frame
-        FTransform ENUTransform = GeoReferencingSystem->GetTangentTransformAtECEFLocation(AircraftState.ECEFLocation);
+        FTransform ESUTransform = GetESUTransformAtECEFLocation(AircraftState.ECEFLocation);
         FRotator LocalUERotation(AircraftState.LocalEulerAngles);
-        LocalUERotation.Yaw = LocalUERotation.Yaw + 90.0; // JSBSim heading is aero heading (0 at north). We have to remove 90 because in UE, 0 is pointing east.
-        FQuat EngineRotationQuat = ENUTransform.TransformRotation(LocalUERotation.Quaternion());
+        LocalUERotation.Yaw = LocalUERotation.Yaw - 90.0; // JSBSim heading is aero heading (0 at north). We have to remove 90 because in UE, 0 is pointing east.
+        FQuat EngineRotationQuat = ESUTransform.TransformRotation(LocalUERotation.Quaternion());
 
         FMatrix EngineRotation;
         EngineRotationQuat.ToMatrix(EngineRotation);
@@ -368,7 +392,7 @@ void UJSBSimMovementComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
         FVector EngineLocation = CGWorldPosition - CGOffsetWorld;
 
         // Update the ForwardHorizontal vector used for the PFD
-        AircraftState.UEForwardHorizontal = ENUTransform.TransformVector(ECEFForwardHorizontal);
+        AircraftState.UEForwardHorizontal = ESUTransform.TransformVector(ECEFForwardHorizontal);
 
         // Apply the transform to the Parent actor
         if (EngineLocation.ContainsNaN() || EngineRotationQuat.ContainsNaN())
@@ -520,8 +544,8 @@ void UJSBSimMovementComponent::PrepareJSBSim()
     GeoReferencingSystem->EngineToGeographic(CGWorldPosition, GeographicCoordinates);
 
     // Computes Rotation in engine frame
-    FTransform ENUTransform = GeoReferencingSystem->GetTangentTransformAtGeographicLocation(GeographicCoordinates);
-    FQuat LocalECEFRotation = ENUTransform.InverseTransformRotation(Parent->GetActorQuat());
+    FTransform ESUTransform = GetESUTransformAtGeographicLocation(GeographicCoordinates);
+    FQuat LocalECEFRotation = ESUTransform.InverseTransformRotation(Parent->GetActorQuat());
     FRotator PsiThetaPhi = LocalECEFRotation.Rotator();
 
     // Set it as initial conditions
@@ -802,6 +826,23 @@ void UJSBSimMovementComponent::DoTrim()
   Commands.Rudder = -FCS->GetDrCmd(); // TODO - Why this minus sign? Is it from FlightGear logic ?
 
   UE_LOG(LogJSBSim, Display, TEXT("Trim Complete"));
+}
+
+FTransform UJSBSimMovementComponent::GetESUTransformAtECEFLocation(const FVector& ECEFLocation) const
+{
+  return BuildESUTangentTransform(GeoReferencingSystem, ECEFLocation);
+}
+
+FTransform UJSBSimMovementComponent::GetESUTransformAtGeographicLocation(const FGeographicCoordinates& GeographicCoordinates) const
+{
+  if (!GeoReferencingSystem)
+  {
+    return FTransform::Identity;
+  }
+
+  FVector ECEFLocation;
+  GeoReferencingSystem->GeographicToECEF(GeographicCoordinates, ECEFLocation);
+  return GetESUTransformAtECEFLocation(ECEFLocation);
 }
 
 void UJSBSimMovementComponent::UpdateLocalTransforms()

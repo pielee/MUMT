@@ -34,6 +34,7 @@ namespace JSBSim {
 
 // UE Forward Declarations
 class AGeoReferencingSystem;
+struct FGeographicCoordinates;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FDelegateAircraftCrashed);
 
@@ -325,6 +326,9 @@ protected:
 private:
 	AActor* Parent = nullptr;
   	FVector ECEFForwardHorizontal;
+
+	FTransform GetESUTransformAtECEFLocation(const FVector& ECEFLocation) const;
+	FTransform GetESUTransformAtGeographicLocation(const FGeographicCoordinates& GeographicCoordinates) const;
 
 	/////////// JSBSim Private methods
 	void DoTrim();
