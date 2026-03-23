@@ -112,6 +112,7 @@ class F16Interface:
 
         self._last_state_log_s = 0.0
         self._last_motion_warning_s = 0.0
+        self._last_state_sanity_warning_s = 0.0
         self._command_sequence = 0
         self._adapter = None
         self._adapter_name = None
@@ -205,6 +206,7 @@ class F16Interface:
             self._refresh_external_state()
 
         self._maybe_log_state_snapshots()
+        self._maybe_warn_state_sanity()
         self._maybe_warn_ground_motion_blockers()
 
     def get_ego_state(self):
@@ -242,6 +244,18 @@ class F16Interface:
 
         self._last_command = command
         self._command_sequence += 1
+        if getattr(self.agent, "blackboard", None) is not None:
+            self.agent.blackboard['bt_tick_interface_final_command'] = {
+                'actor_id': self.get_command_target_id(),
+                'source_node': command.source_node or 'UNKNOWN',
+                'source_branch': command.source_branch or 'unspecified',
+                'command_profile': command.command_profile or 'default',
+                'safety_mode_reason': command.safety_mode_reason or '',
+                'throttle': round(float(command.throttle), 3),
+                'elevator': round(float(command.elevator), 3),
+                'aileron': round(float(command.aileron), 3),
+                'rudder': round(float(command.rudder), 3),
+            }
 
         if self.command_logging:
             self._log(
@@ -781,6 +795,35 @@ class F16Interface:
             state_source=state.state_source,
         )
 
+    def _normalise_state_flags(self, state):
+        ground_speed = _safe_float(getattr(state, "ground_speed_mps", 0.0), 0.0)
+        altitude_agl = _safe_float(getattr(state, "altitude_agl_m", 0.0), 0.0)
+        altitude_world = _safe_float(getattr(state, "altitude_world_m", state.position_m.z), state.position_m.z)
+        airspeed = _safe_float(getattr(state, "airspeed_mps", 0.0), 0.0)
+
+        if (
+            (not state.on_ground)
+            and airspeed < 1.0
+            and ground_speed < 1.0
+            and altitude_agl <= 2.0
+            and altitude_world <= 25.0
+        ):
+            state.on_ground = True
+            state.status_message = (
+                f"{state.status_message or 'state_ok'}|normalised_on_ground_from_low_energy_state"
+            )
+
+        if state.on_ground and altitude_agl > 10.0:
+            state.on_ground = False
+            state.status_message = (
+                f"{state.status_message or 'state_ok'}|normalised_airborne_from_agl"
+            )
+
+        if ground_speed <= 0.0 and airspeed > 0.0:
+            state.ground_speed_mps = airspeed
+
+        return state
+
     def _invalidate_state(self, previous_state, reason):
         state = self._copy_state(previous_state)
         state.valid = False
@@ -824,6 +867,7 @@ class F16Interface:
             if state.altitude_world_m == 0.0 and state.altitude_m == 0.0:
                 state.altitude_world_m = state.position_m.z
                 state.altitude_m = state.position_m.z
+            state = self._normalise_state_flags(state)
             return self._validate_state(state, entity_name, expected_actor_id)
 
         if not isinstance(payload, dict):
@@ -913,6 +957,7 @@ class F16Interface:
             status_message=str(payload.get("status_message", "")),
             state_source=str(payload.get("state_source", "")),
         )
+        state = self._normalise_state_flags(state)
         return self._validate_state(state, entity_name, expected_actor_id)
 
     def _validate_state(self, state, entity_name, expected_actor_id):
@@ -1053,6 +1098,37 @@ class F16Interface:
                 f"despite throttle={self._last_command.throttle:.2f}. blockers={', '.join(blockers)}"
             ),
         )
+
+    def _maybe_warn_state_sanity(self):
+        now = time.monotonic()
+        if now - self._last_state_sanity_warning_s < self.movement_check_interval_s:
+            return
+
+        warnings = []
+        for entity_name, state in (("ego", self._ego_state), ("enemy", self._enemy_state)):
+            if not state.valid:
+                continue
+
+            velocity_norm = math.sqrt(
+                (state.velocity_mps.x ** 2) + (state.velocity_mps.y ** 2) + (state.velocity_mps.z ** 2)
+            )
+            if (not state.on_ground) and state.altitude_world_m < 25.0 and state.airspeed_mps < 1.0 and velocity_norm < 1.0:
+                warnings.append(f"{entity_name}:on_ground_false_but_low_alt_zero_speed")
+            if state.airspeed_mps < 1.0 and velocity_norm > 15.0:
+                warnings.append(f"{entity_name}:airspeed_zero_but_velocity_high")
+            if (
+                entity_name == "ego"
+                and self._last_command.throttle >= 0.85
+                and velocity_norm < 1.0
+                and state.altitude_world_m < 25.0
+            ):
+                warnings.append(f"{entity_name}:high_throttle_but_velocity_zero")
+
+        if not warnings:
+            return
+
+        self._last_state_sanity_warning_s = now
+        self._log("WARNING", f"state_sanity warnings={warnings}")
 
     def _require_actor_id(self, entity_name):
         actor_id = self.ego_actor_id if entity_name == "ego" else self.enemy_actor_id

@@ -7,6 +7,8 @@
 #include "IPAddress.h"
 #include "UDPControlReceiver.generated.h"
 
+class UJSBSimMovementComponent;
+
 UCLASS()
 class MUMT_SIM_API AUDPControlReceiver : public AActor
 {
@@ -35,6 +37,12 @@ private:
     // ===== Pawn 처리 =====
     APawn* FindTargetPawn();
     bool SetBlueprintNumber(APawn* Pawn, const FName VarName, double Value);
+    bool GetBlueprintNumber(APawn* Pawn, const FName VarName, double& OutValue) const;
+    UJSBSimMovementComponent* FindJSBSimMovementComponent(APawn* Pawn) const;
+    void LogPawnBindingState(APawn* Pawn, UJSBSimMovementComponent* MovementComponent, const TCHAR* Context) const;
+    void LogControlApplication(APawn* Pawn, UJSBSimMovementComponent* MovementComponent, const TCHAR* Context) const;
+    void ApplyDirectJSBSimCommands(UJSBSimMovementComponent* MovementComponent);
+    bool ShouldEmitDiagnostics() const;
 
 private:
     // 수신용 소켓
@@ -56,6 +64,7 @@ private:
     FVector PrevLocation = FVector::ZeroVector;
     bool bHasPrevLocation = false;
     double PrevStateSendTime = 0.0;
+    mutable double LastDiagnosticsLogTime = -1.0;
 
 public:
     // ===== 수신 설정 =====
@@ -72,7 +81,7 @@ public:
     FString PythonIP = TEXT("127.0.0.1");
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Sender")
-    int32 PythonStatePort = 5006;
+    int32 PythonStatePort = 5007;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Sender")
     float StateSendInterval = 0.05f; // 20Hz
@@ -80,6 +89,24 @@ public:
     // ===== 제어 대상 Pawn =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Target")
     FString TargetPawnName = TEXT("F16_UAV");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Target")
+    FString TargetPawnExactName = TEXT("");
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Debug")
+    bool bLogControlDiagnostics = true;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Debug", meta = (ClampMin = "0.0"))
+    float ControlDiagnosticsInterval = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Debug")
+    bool bDirectDriveJSBSimCommands = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Debug")
+    bool bAutoReleaseBrakesOnThrottle = false;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Debug", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+    float DirectDriveThrottleThreshold = 0.05f;
 
     // ===== 수신된 조종값 =====
     UPROPERTY(BlueprintReadOnly, Category = "UDP|Control")

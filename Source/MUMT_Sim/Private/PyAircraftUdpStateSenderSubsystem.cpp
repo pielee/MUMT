@@ -40,7 +40,7 @@ void UPyAircraftUdpStateSenderSubsystem::Initialize(FSubsystemCollectionBase& Co
     UE_LOG(
         LogPyAircraftUdpStateSender,
         Log,
-        TEXT("[UDP-STATE] sender start requested host=%s port=%d rate_hz=%.1f ego_hint=%s player_hint=%s (engine subsystem)"),
+        TEXT("[UDP-STATE][PORTS] sender start requested destination=%s:%d rate_hz=%.1f ego_hint=%s player_hint=%s (engine subsystem)"),
         *DestinationHost,
         DestinationPort,
         SendRateHz,
@@ -73,7 +73,7 @@ bool UPyAircraftUdpStateSenderSubsystem::StartSender()
         UE_LOG(
             LogPyAircraftUdpStateSender,
             Log,
-            TEXT("[UDP-STATE] sender already running -> %s:%d"),
+            TEXT("[UDP-STATE][PORTS] sender already running destination=%s:%d"),
             *DestinationHost,
             DestinationPort
         );
@@ -121,7 +121,7 @@ bool UPyAircraftUdpStateSenderSubsystem::StartSender()
     UE_LOG(
         LogPyAircraftUdpStateSender,
         Log,
-        TEXT("[UDP-STATE] sender started -> %s:%d"),
+        TEXT("[UDP-STATE][PORTS] sender started destination=%s:%d"),
         *DestinationHost,
         DestinationPort
     );

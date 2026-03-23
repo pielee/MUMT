@@ -18,13 +18,25 @@ bt_runner:
 
 f16_ai:
   airborne_altitude_m: 20.0
-  safe_altitude_m: 1500.0
+  safe_altitude_m: 700.0
   far_range_m: 6000.0
-  in_range_m: 2500.0
-  follow_distance_m: 550.0
-  rear_aspect_angle_deg: 45.0
+  in_range_m: 2200.0
+  follow_distance_m: 450.0
+  rear_aspect_angle_deg: 55.0
   logging:
     enabled: true
+  debug:
+    enabled: true
+    log_every_n_ticks: 1
+    force_takeoff:
+      enabled: false
+      duration_s: 8.0
+      ground_roll_throttle_cmd: 1.0
+      ground_roll_pitch_cmd: 0.0
+      rotation_throttle_cmd: 1.0
+      rotation_pitch_cmd: 0.30
+      initial_climb_throttle_cmd: 1.0
+      initial_climb_pitch_cmd: 0.20
   recovery:
     stall_speed_mps: 80.0
     stall_clear_speed_mps: 92.0
@@ -52,40 +64,52 @@ f16_ai:
     takeoff_pitch_cmd: 0.15
     takeoff_roll_cmd: 0.0
     takeoff_yaw_cmd: 0.0
+    ground_roll_throttle_cmd: 1.0
+    ground_roll_pitch_cmd: 0.0
+    ground_roll_roll_cmd: 0.0
+    ground_roll_yaw_cmd: 0.0
+    rotation_throttle_cmd: 1.0
+    rotation_pitch_cmd: 0.22
+    rotation_roll_cmd: 0.0
+    rotation_yaw_cmd: 0.0
+    initial_climb_throttle_cmd: 1.0
+    initial_climb_pitch_cmd: 0.18
+    initial_climb_roll_cmd: 0.0
+    initial_climb_yaw_cmd: 0.0
     takeoff_exit_altitude_m: 80.0
     takeoff_exit_speed_mps: 90.0
   climb:
     climb_pitch_deg: 16.0
     throttle: 1.0
-    turn_initiation_altitude_m: 400.0
-    max_heading_change_deg_below_turn_altitude: 10.0
-    max_heading_change_deg_during_climb: 20.0
+    turn_initiation_altitude_m: 220.0
+    max_heading_change_deg_below_turn_altitude: 18.0
+    max_heading_change_deg_during_climb: 35.0
   intercept:
     throttle: 1.0
-    max_pitch_deg: 18.0
+    max_pitch_deg: 20.0
     min_lookahead_s: 0.5
     max_lookahead_s: 6.0
     min_closure_speed_mps: 120.0
   get_behind:
-    distance_m: 900.0
-    lookahead_s: 1.4
+    distance_m: 700.0
+    lookahead_s: 1.0
     altitude_offset_m: 0.0
-    max_pitch_deg: 20.0
+    max_pitch_deg: 24.0
     min_target_forward_speed_mps: 25.0
-    base_throttle: 0.95
-    distance_gain: 0.00012
-    speed_gain: 0.003
+    base_throttle: 0.96
+    distance_gain: 0.00018
+    speed_gain: 0.0045
     min_throttle: 0.70
     max_throttle: 1.0
   follow:
-    lookahead_s: 0.8
+    lookahead_s: 0.6
     altitude_offset_m: 0.0
-    max_pitch_deg: 16.0
-    anchor_tolerance_m: 250.0
+    max_pitch_deg: 18.0
+    anchor_tolerance_m: 180.0
     min_target_forward_speed_mps: 25.0
-    base_throttle: 0.82
-    distance_gain: 0.00010
-    speed_gain: 0.0035
+    base_throttle: 0.86
+    distance_gain: 0.00016
+    speed_gain: 0.0040
     min_throttle: 0.55
     max_throttle: 1.0
   reacquire:
@@ -100,14 +124,14 @@ f16_ai:
     close_throttle: 0.8
     max_pitch_deg: 22.0
   controller:
-    heading_to_aileron_gain: 0.018
-    roll_damping_gain: 0.015
-    pitch_to_elevator_gain: 0.04
-    rudder_gain: 0.006
-    max_heading_error_deg: 35.0
-    max_pitch_error_deg: 12.0
-    max_aileron_cmd: 0.45
-    max_elevator_cmd: 0.40
+    heading_to_aileron_gain: 0.026
+    roll_damping_gain: 0.020
+    pitch_to_elevator_gain: 0.055
+    rudder_gain: 0.010
+    max_heading_error_deg: 50.0
+    max_pitch_error_deg: 16.0
+    max_aileron_cmd: 0.55
+    max_elevator_cmd: 0.45
     max_rudder_cmd: 0.25
 
 f16_interface:
@@ -145,42 +169,42 @@ f16_interface:
     # Protected departure profile: use this until the aircraft is safely airborne.
     takeoff:
       max_roll_cmd: 0.02
-      max_pitch_cmd: 0.18
+      max_pitch_cmd: 0.28
       max_yaw_cmd: 0.02
-      min_throttle_cmd: 0.85
-      max_throttle_cmd: 0.92
+      min_throttle_cmd: 0.92
+      max_throttle_cmd: 1.00
     climb:
-      max_roll_cmd: 0.04
-      max_pitch_cmd: 0.12
+      max_roll_cmd: 0.08
+      max_pitch_cmd: 0.20
       max_yaw_cmd: 0.03
-      min_throttle_cmd: 0.85
-      max_throttle_cmd: 0.90
+      min_throttle_cmd: 0.90
+      max_throttle_cmd: 1.00
     # Common pursuit profile: intercept / get-behind / follow / reacquire merge this
     # before their node-specific overrides.
     pursuit:
-      max_roll_cmd: 0.22
-      max_pitch_cmd: 0.15
-      max_yaw_cmd: 0.12
+      max_roll_cmd: 0.32
+      max_pitch_cmd: 0.20
+      max_yaw_cmd: 0.15
       min_throttle_cmd: 0.85
-      max_throttle_cmd: 0.95
+      max_throttle_cmd: 1.00
     intercept:
-      max_roll_cmd: 0.24
-      max_pitch_cmd: 0.16
-      max_yaw_cmd: 0.12
+      max_roll_cmd: 0.36
+      max_pitch_cmd: 0.22
+      max_yaw_cmd: 0.16
       min_throttle_cmd: 0.88
-      max_throttle_cmd: 0.95
+      max_throttle_cmd: 1.00
     get_behind:
-      max_roll_cmd: 0.22
-      max_pitch_cmd: 0.15
-      max_yaw_cmd: 0.12
+      max_roll_cmd: 0.34
+      max_pitch_cmd: 0.22
+      max_yaw_cmd: 0.15
       min_throttle_cmd: 0.86
-      max_throttle_cmd: 0.94
+      max_throttle_cmd: 1.00
     follow:
-      max_roll_cmd: 0.20
-      max_pitch_cmd: 0.14
-      max_yaw_cmd: 0.10
-      min_throttle_cmd: 0.85
-      max_throttle_cmd: 0.92
+      max_roll_cmd: 0.28
+      max_pitch_cmd: 0.18
+      max_yaw_cmd: 0.14
+      min_throttle_cmd: 0.80
+      max_throttle_cmd: 0.96
     reacquire:
       max_roll_cmd: 0.18
       max_pitch_cmd: 0.12
@@ -216,6 +240,11 @@ f16_interface:
   udp_adapter:
     host: "127.0.0.1"
     command_port: 5005
+    # Local source bind for Python -> Unreal command UDP.
+    # Keep port 0 to let the OS choose an ephemeral source port.
+    # Do not bind this to 5007, because 5007 is reserved for Unreal -> Python state packets.
+    command_bind_host: "0.0.0.0"
+    command_bind_port: 0
     state_host: "0.0.0.0"
     state_port: 5007
     require_states_array: true

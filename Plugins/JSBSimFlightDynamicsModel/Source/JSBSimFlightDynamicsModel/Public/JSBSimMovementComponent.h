@@ -196,6 +196,12 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Commands")
 	FFlightControlCommands Commands;
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Debug")
+	bool bLogCommandInputs = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Debug", meta = (ClampMin = "0.0"))
+	float CommandLogInterval = 0.5f;
+
 	UPROPERTY(Transient, BlueprintReadOnly, VisibleAnywhere, Category = "State")
 	FAircraftState AircraftState;
 
@@ -294,6 +300,7 @@ protected:
 	int simloops = 0;
 	
 	double TickTime = 0;
+	double LastCommandLogTime = -1.0;
 
 	/////////// JSBSim Protected methods
 

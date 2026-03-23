@@ -683,6 +683,41 @@ void UJSBSimMovementComponent::DeInitializeJSBSim()
 
 void UJSBSimMovementComponent::CopyToJSBSim()
 {
+  const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+  const bool bShouldLogCommandInputs =
+    bLogCommandInputs &&
+    (LastCommandLogTime < 0.0 || CommandLogInterval <= 0.0f || (Now - LastCommandLogTime) >= static_cast<double>(CommandLogInterval));
+
+  if (bShouldLogCommandInputs)
+  {
+    LastCommandLogTime = Now;
+
+    const bool bHasEngineCommand = EngineCommands.Num() > 0;
+    const bool bHasEngineState = EngineStates.Num() > 0;
+    const FEngineCommand* EngineCommand0 = bHasEngineCommand ? &EngineCommands[0] : nullptr;
+    const FEngineState* EngineState0 = bHasEngineState ? &EngineStates[0] : nullptr;
+
+    UE_LOG(LogTemp, Warning,
+      TEXT("[JSBSIM][COPY] owner=%s commands=(ail=%.3f,ele=%.3f,rud=%.3f,gear=%.3f,park=%.3f,left=%.3f,right=%.3f,center=%.3f) engine_cmd0=(throttle=%.3f,running=%d,starter=%d) engine_state0=(running=%d,thrust=%.3f,rpm=%.3f,n1=%.3f,n2=%.3f)"),
+      *GetNameSafe(GetOwner()),
+      Commands.Aileron,
+      Commands.Elevator,
+      Commands.Rudder,
+      Commands.GearDown,
+      Commands.ParkingBrake,
+      Commands.LeftBrake,
+      Commands.RightBrake,
+      Commands.CenterBrake,
+      EngineCommand0 ? EngineCommand0->Throttle : -1.0,
+      EngineCommand0 ? (EngineCommand0->Running ? 1 : 0) : 0,
+      EngineCommand0 ? (EngineCommand0->Starter ? 1 : 0) : 0,
+      EngineState0 ? (EngineState0->Running ? 1 : 0) : 0,
+      EngineState0 ? EngineState0->Thrust : -1.0,
+      EngineState0 ? EngineState0->EngineRPM : -1.0,
+      EngineState0 ? EngineState0->N1 : -1.0,
+      EngineState0 ? EngineState0->N2 : -1.0);
+  }
+
   // Basic flight controls
   FCS->SetDaCmd(Commands.Aileron);
   FCS->SetRollTrimCmd(Commands.RollTrim);

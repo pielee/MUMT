@@ -55,8 +55,10 @@ class F16UdpBridgeAdapter:
 
         self.host = str(udp_cfg.get("host", "127.0.0.1"))
         self.command_port = int(udp_cfg.get("command_port", 5005))
+        self.command_bind_host = str(udp_cfg.get("command_bind_host", "0.0.0.0"))
+        self.command_bind_port = int(udp_cfg.get("command_bind_port", 0))
         self.state_host = str(udp_cfg.get("state_host", "0.0.0.0"))
-        self.state_port = int(udp_cfg.get("state_port", 5006))
+        self.state_port = int(udp_cfg.get("state_port", 5007))
         self.encoding = str(udp_cfg.get("encoding", "utf-8"))
         self.state_socket_timeout_s = float(udp_cfg.get("state_socket_timeout_s", 0.001))
         self.enable_state_listener = bool(udp_cfg.get("enable_state_listener", True))
@@ -72,12 +74,24 @@ class F16UdpBridgeAdapter:
 
         self.ego_actor_id = str(interface_cfg.get("ego_actor_id", "") or "").strip()
         self.enemy_actor_id = str(interface_cfg.get("enemy_actor_id", "") or "").strip()
+        self.single_state_actor_id = str(
+            udp_cfg.get("single_state_actor_id", "") or self.ego_actor_id or ""
+        ).strip()
 
         self._command_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self._command_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._command_socket.bind((self.command_bind_host, self.command_bind_port))
         self._state_socket = None
         self._state_cache = {}
         self._warned_missing_state = set()
         self._announced_live_state_actors = set()
+
+        command_local_host, command_local_port = self._safe_getsockname(self._command_socket)
+        print(
+            "[F16UdpBridgeAdapter] "
+            f"command socket bound local={command_local_host}:{command_local_port} "
+            f"send_target={self.host}:{self.command_port}"
+        )
 
         self._ensure_state_socket()
 
@@ -135,12 +149,15 @@ class F16UdpBridgeAdapter:
         payload = f"{roll},{pitch},{yaw},{throttle}"
         encoded = payload.encode(self.encoding)
         sent = self._command_socket.sendto(encoded, (self.host, self.command_port))
+        local_host, local_port = self._safe_getsockname(self._command_socket)
 
         print(
             "[F16UdpBridgeAdapter] "
             f"source={source_node} branch={source_branch} "
             f"profile={profile_name} "
             f"actor_id={actor_id or self.ego_actor_id or 'UNBOUND'} "
+            f"local={local_host}:{local_port} "
+            f"sendto={self.host}:{self.command_port} "
             f"csv4(roll,pitch,yaw,throttle)={payload} "
             f"raw=({raw_values[0]:.2f},{raw_values[1]:.2f},{raw_values[2]:.2f},{raw_values[3]:.2f}) "
             f"bytes_sent={sent}"
@@ -200,8 +217,19 @@ class F16UdpBridgeAdapter:
 
         print(
             "[F16UdpBridgeAdapter] "
-            f"listening for Unreal state on {self.state_host}:{self.state_port}"
+            f"state listener bound local={self.state_host}:{self.state_port}"
         )
+
+    def _safe_getsockname(self, sock):
+        try:
+            address = sock.getsockname()
+        except OSError:
+            return "UNKNOWN", -1
+
+        if not isinstance(address, tuple) or len(address) < 2:
+            return "UNKNOWN", -1
+
+        return str(address[0]), int(address[1])
 
     def _drain_state_socket(self):
         if self._state_socket is None:

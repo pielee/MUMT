@@ -44,6 +44,8 @@ _GET_BEHIND_CFG = _AI_CFG.get('get_behind', {})
 _FOLLOW_CFG = _AI_CFG.get('follow', {})
 _REACQUIRE_CFG = _AI_CFG.get('reacquire', {})
 _LOGGING_CFG = _AI_CFG.get('logging', {})
+_DEBUG_CFG = _AI_CFG.get('debug', {})
+_FORCE_TAKEOFF_CFG = _DEBUG_CFG.get('force_takeoff', {})
 _COORDINATE_LOGGED = False
 
 CUSTOM_ACTION_NODES = [
@@ -88,6 +90,35 @@ def _get_states(agent, blackboard):
 def _debug_log(message):
     if _LOGGING_CFG.get('enabled', True):
         print(f"[F16BT] {message}")
+
+
+def _condition_log(blackboard, name, result, reason):
+    trace = blackboard.setdefault('bt_tick_condition_trace', [])
+    trace.append(f"{name}={result}:{reason}")
+    if _DEBUG_CFG.get('enabled', False):
+        _debug_log(f"Condition {name} -> {result} reason={reason}")
+
+
+def _record_branch_attempt(blackboard, node_name, branch_name, command):
+    attempts = blackboard.setdefault('bt_tick_branch_attempts', [])
+    attempts.append(
+        f"{node_name}:{branch_name}:thr={command[0]:.2f},ele={command[1]:.2f},ail={command[2]:.2f},rud={command[3]:.2f}"
+    )
+
+
+def _force_takeoff_active(blackboard):
+    if not _FORCE_TAKEOFF_CFG.get('enabled', False):
+        blackboard['f16_force_takeoff_active'] = False
+        return False
+
+    start_time = blackboard.get('f16_force_takeoff_start_s')
+    if start_time is None:
+        start_time = time.monotonic()
+        blackboard['f16_force_takeoff_start_s'] = start_time
+
+    active = (time.monotonic() - float(start_time)) <= float(_FORCE_TAKEOFF_CFG.get('duration_s', 8.0))
+    blackboard['f16_force_takeoff_active'] = active
+    return active
 
 
 def _log_coordinate_convention_once():
@@ -176,6 +207,84 @@ def _takeoff_command():
     )
 
 
+def _takeoff_phase_command(ego):
+    rotate_speed_mps = float(_TAKEOFF_CFG.get('rotate_speed_mps', 82.0))
+    airborne_altitude_m = float(_AI_CFG.get('airborne_altitude_m', 20.0))
+    current_altitude = altitude_m(ego)
+    current_speed = float(ego.airspeed_mps)
+
+    if ego.on_ground and current_speed < (rotate_speed_mps * 0.92):
+        return (
+            "ground_roll",
+            (
+                float(_TAKEOFF_CFG.get('ground_roll_throttle_cmd', 1.0)),
+                float(_TAKEOFF_CFG.get('ground_roll_pitch_cmd', 0.0)),
+                float(_TAKEOFF_CFG.get('ground_roll_roll_cmd', 0.0)),
+                float(_TAKEOFF_CFG.get('ground_roll_yaw_cmd', 0.0)),
+            ),
+        )
+
+    if ego.on_ground or current_altitude < airborne_altitude_m:
+        return (
+            "rotation",
+            (
+                float(_TAKEOFF_CFG.get('rotation_throttle_cmd', 1.0)),
+                float(_TAKEOFF_CFG.get('rotation_pitch_cmd', 0.22)),
+                float(_TAKEOFF_CFG.get('rotation_roll_cmd', 0.0)),
+                float(_TAKEOFF_CFG.get('rotation_yaw_cmd', 0.0)),
+            ),
+        )
+
+    return (
+        "initial_climb",
+        (
+            float(_TAKEOFF_CFG.get('initial_climb_throttle_cmd', 1.0)),
+            float(_TAKEOFF_CFG.get('initial_climb_pitch_cmd', 0.18)),
+            float(_TAKEOFF_CFG.get('initial_climb_roll_cmd', 0.0)),
+            float(_TAKEOFF_CFG.get('initial_climb_yaw_cmd', 0.0)),
+        ),
+    )
+
+
+def _forced_takeoff_phase_command(ego):
+    rotate_speed_mps = float(_TAKEOFF_CFG.get('rotate_speed_mps', 82.0))
+    airborne_altitude_m = float(_AI_CFG.get('airborne_altitude_m', 20.0))
+    current_altitude = altitude_m(ego)
+    current_speed = float(ego.airspeed_mps)
+
+    if ego.on_ground and current_speed < (rotate_speed_mps * 0.92):
+        return (
+            "forced_ground_roll",
+            (
+                float(_FORCE_TAKEOFF_CFG.get('ground_roll_throttle_cmd', 1.0)),
+                float(_FORCE_TAKEOFF_CFG.get('ground_roll_pitch_cmd', 0.0)),
+                0.0,
+                0.0,
+            ),
+        )
+
+    if ego.on_ground or current_altitude < airborne_altitude_m:
+        return (
+            "forced_rotation",
+            (
+                float(_FORCE_TAKEOFF_CFG.get('rotation_throttle_cmd', 1.0)),
+                float(_FORCE_TAKEOFF_CFG.get('rotation_pitch_cmd', 0.30)),
+                0.0,
+                0.0,
+            ),
+        )
+
+    return (
+        "forced_initial_climb",
+        (
+            float(_FORCE_TAKEOFF_CFG.get('initial_climb_throttle_cmd', 1.0)),
+            float(_FORCE_TAKEOFF_CFG.get('initial_climb_pitch_cmd', 0.20)),
+            0.0,
+            0.0,
+        ),
+    )
+
+
 def _far_range_m():
     return float(_AI_CFG.get('far_range_m', _AI_CFG.get('target_far_distance_m', 6000.0)))
 
@@ -197,7 +306,15 @@ def _is_airborne_now(ego):
     return (not ego.on_ground) and (altitude_m(ego) >= airborne_altitude)
 
 
-def _needs_takeoff(ego):
+def _needs_takeoff(ego, blackboard=None):
+    if _takeoff_exit_reached(ego):
+        if isinstance(blackboard, dict):
+            blackboard['f16_takeoff_committed'] = False
+        return False
+
+    if isinstance(blackboard, dict) and blackboard.get('f16_takeoff_committed', False):
+        return True
+
     return not _is_airborne_now(ego)
 
 
@@ -340,6 +457,50 @@ def _branch_log(node_name, branch_name, ego, command, metrics=None, guidance_deb
     _debug_log(" ".join(parts))
 
 
+def _log_state_quality(prefix, state):
+    if not _state_is_valid(state):
+        _debug_log(f"{prefix} state=invalid")
+        return
+
+    inconsistencies = []
+    if (not state.on_ground) and state.airspeed_mps < 1.0 and altitude_m(state) < 25.0:
+        inconsistencies.append("airborne_flag_with_zero_speed")
+    if state.on_ground and altitude_m(state) > 40.0:
+        inconsistencies.append("on_ground_flag_at_high_altitude")
+    if abs(float(getattr(state, 'ground_speed_mps', 0.0)) - float(state.airspeed_mps)) > 120.0:
+        inconsistencies.append("large_groundspeed_airspeed_gap")
+
+    if inconsistencies:
+        _debug_log(
+            f"{prefix} state_quality actor_id={getattr(state, 'actor_id', 'UNBOUND')} "
+            f"on_ground={state.on_ground} airspeed={state.airspeed_mps:.1f} "
+            f"ground_speed={getattr(state, 'ground_speed_mps', 0.0):.1f} "
+            f"alt={altitude_m(state):.1f} agl={getattr(state, 'altitude_agl_m', 0.0):.1f} "
+            f"flags={','.join(inconsistencies)}"
+        )
+
+
+def _state_sanity_warnings(state, command=None):
+    if not _state_is_valid(state):
+        return ["state_invalid"]
+
+    warnings = []
+    velocity_norm = (
+        (float(state.velocity_mps.x) ** 2)
+        + (float(state.velocity_mps.y) ** 2)
+        + (float(state.velocity_mps.z) ** 2)
+    ) ** 0.5
+
+    if (not state.on_ground) and altitude_m(state) < 25.0 and state.airspeed_mps < 1.0 and velocity_norm < 1.0:
+        warnings.append("on_ground_false_but_low_alt_zero_speed")
+    if state.airspeed_mps < 1.0 and velocity_norm > 15.0:
+        warnings.append("airspeed_zero_but_velocity_high")
+    if command is not None and float(command[0]) >= 0.85 and velocity_norm < 1.0:
+        warnings.append("high_throttle_but_velocity_zero")
+
+    return warnings
+
+
 def _recovery_flags(ego, blackboard):
     previous = blackboard.get('f16_recovery_flags', {})
     stall_active_before = bool(previous.get('stalling', False))
@@ -379,8 +540,39 @@ class F16Action(Node):
             self.status = Status.FAILURE
             return Status.FAILURE
 
+        blackboard = getattr(agent, 'blackboard', {})
         command = (throttle, elevator, aileron, rudder)
         branch_name = str(branch_name or "").strip()
+        _record_branch_attempt(blackboard, self.name, branch_name or "unspecified", command)
+        previous_final = blackboard.get('bt_tick_final_command')
+        if previous_final is not None:
+            overwrite_text = (
+                f"overwrite_by_other_branch prev={previous_final.get('node')}:{previous_final.get('branch')} "
+                f"new={self.name}:{branch_name or 'unspecified'}"
+            )
+            blackboard.setdefault('bt_tick_overwrites', []).append(overwrite_text)
+            _debug_log(overwrite_text)
+
+        blackboard['bt_tick_current_branch'] = f"{self.name}:{branch_name or 'unspecified'}"
+        blackboard['bt_tick_final_command'] = {
+            'node': self.name,
+            'branch': branch_name or 'unspecified',
+            'command': {
+                'throttle': round(float(throttle), 3),
+                'elevator': round(float(elevator), 3),
+                'aileron': round(float(aileron), 3),
+                'rudder': round(float(rudder), 3),
+            },
+        }
+
+        ego_state = blackboard.get('ego_state')
+        sanity = _state_sanity_warnings(ego_state, command)
+        if sanity:
+            _debug_log(
+                f"state_warning node={self.name} branch={branch_name or 'unspecified'} "
+                f"warnings={sanity}"
+            )
+
         if hasattr(agent.interface, 'set_command_context'):
             agent.interface.set_command_context(self.name, branch_name)
         if hasattr(agent.interface, 'describe_ego_binding'):
@@ -419,8 +611,23 @@ class NeedsTakeoff(SyncCondition):
     def _check(self, agent, blackboard):
         ego, _ = _get_states(agent, blackboard)
         if not _state_is_valid(ego):
+            _condition_log(blackboard, self.name, "FAILURE", "ego_state_invalid")
             return Status.FAILURE
-        return Status.SUCCESS if _needs_takeoff(ego) else Status.FAILURE
+        if _force_takeoff_active(blackboard):
+            reason = "force_takeoff_window_active"
+            _condition_log(blackboard, self.name, "SUCCESS", reason)
+            return Status.SUCCESS
+
+        takeoff_needed = _needs_takeoff(ego, blackboard)
+        reason = (
+            f"on_ground={ego.on_ground} airborne_now={_is_airborne_now(ego)} "
+            f"takeoff_exit_reached={_takeoff_exit_reached(ego)} "
+            f"alt={altitude_m(ego):.1f} airspeed={ego.airspeed_mps:.1f} "
+            f"takeoff_exit_alt={_takeoff_exit_altitude_m():.1f} "
+            f"takeoff_exit_spd={_takeoff_exit_speed_mps():.1f}"
+        )
+        _condition_log(blackboard, self.name, "SUCCESS" if takeoff_needed else "FAILURE", reason)
+        return Status.SUCCESS if takeoff_needed else Status.FAILURE
 
 
 class NeedsClimbToSafeAltitude(SyncCondition):
@@ -430,8 +637,15 @@ class NeedsClimbToSafeAltitude(SyncCondition):
     def _check(self, agent, blackboard):
         ego, _ = _get_states(agent, blackboard)
         if not _state_is_valid(ego):
+            _condition_log(blackboard, self.name, "FAILURE", "ego_state_invalid")
             return Status.FAILURE
-        return Status.SUCCESS if _needs_safe_altitude(ego) else Status.FAILURE
+        if _force_takeoff_active(blackboard):
+            _condition_log(blackboard, self.name, "FAILURE", "force_takeoff_window_active")
+            return Status.FAILURE
+        result = _needs_safe_altitude(ego)
+        reason = f"airborne_now={_is_airborne_now(ego)} alt={altitude_m(ego):.1f} safe_alt={float(_AI_CFG.get('safe_altitude_m', 1500.0)):.1f}"
+        _condition_log(blackboard, self.name, "SUCCESS" if result else "FAILURE", reason)
+        return Status.SUCCESS if result else Status.FAILURE
 
 
 class IsStalling(SyncCondition):
@@ -441,10 +655,15 @@ class IsStalling(SyncCondition):
     def _check(self, agent, blackboard):
         ego, _ = _get_states(agent, blackboard)
         if not _state_is_valid(ego):
+            _condition_log(blackboard, self.name, "FAILURE", "ego_state_invalid")
+            return Status.FAILURE
+        if _force_takeoff_active(blackboard):
+            _condition_log(blackboard, self.name, "FAILURE", "force_takeoff_window_active")
             return Status.FAILURE
 
         flags = _recovery_flags(ego, blackboard)
         blackboard['f16_recovery_flags'] = flags
+        _condition_log(blackboard, self.name, "SUCCESS" if any(flags.values()) else "FAILURE", str(flags))
         return Status.SUCCESS if any(flags.values()) else Status.FAILURE
 
 
@@ -519,13 +738,19 @@ class Takeoff(F16Action):
             self.status = Status.FAILURE
             return self.status
 
-        current_altitude = altitude_m(ego)
         if _takeoff_exit_reached(ego):
+            blackboard['f16_takeoff_committed'] = False
+            blackboard['f16_takeoff_active_ticks'] = 0
             self.status = Status.SUCCESS
             return self.status
 
-        command = _takeoff_command()
-        branch = "ground_roll" if ego.on_ground else "initial_liftoff"
+        blackboard['f16_takeoff_committed'] = True
+        blackboard['f16_takeoff_active_ticks'] = int(blackboard.get('f16_takeoff_active_ticks', 0)) + 1
+        _log_state_quality("Takeoff", ego)
+        if _force_takeoff_active(blackboard):
+            branch, command = _forced_takeoff_phase_command(ego)
+        else:
+            branch, command = _takeoff_phase_command(ego)
         _branch_log(
             self.name,
             branch,
@@ -533,7 +758,10 @@ class Takeoff(F16Action):
             command,
             extra=(
                 f"takeoff_exit_alt={_takeoff_exit_altitude_m():.1f}m "
-                f"takeoff_exit_spd={_takeoff_exit_speed_mps():.1f}mps on_ground={ego.on_ground}"
+                f"takeoff_exit_spd={_takeoff_exit_speed_mps():.1f}mps on_ground={ego.on_ground} "
+                f"ground_speed={getattr(ego, 'ground_speed_mps', 0.0):.1f}mps "
+                f"takeoff_ticks={blackboard.get('f16_takeoff_active_ticks', 0)} "
+                f"force_takeoff={blackboard.get('f16_force_takeoff_active', False)}"
             ),
         )
         return self._send_command(agent, *command, branch_name=branch)
@@ -559,10 +787,11 @@ class ClimbToSafeAltitude(F16Action):
             return self.status
 
         if not _takeoff_exit_reached(ego):
-            command = _takeoff_command()
+            blackboard['f16_takeoff_committed'] = True
+            branch, command = _takeoff_phase_command(ego)
             _branch_log(
                 self.name,
-                "protected_departure",
+                f"protected_{branch}",
                 ego,
                 command,
                 extra=(
@@ -570,7 +799,7 @@ class ClimbToSafeAltitude(F16Action):
                     f"takeoff_exit_spd={_takeoff_exit_speed_mps():.1f}mps"
                 ),
             )
-            return self._send_command(agent, *command, branch_name="protected_departure")
+            return self._send_command(agent, *command, branch_name=f"protected_{branch}")
 
         runway_heading = float(_TAKEOFF_CFG.get('runway_heading_deg', ego.yaw_deg))
         turn_initiation_altitude_m = float(_CLIMB_CFG.get('turn_initiation_altitude_m', 400.0))
@@ -626,6 +855,8 @@ class InterceptTarget(F16Action):
             self.status = Status.FAILURE
             return self.status
 
+        _log_state_quality("InterceptTarget.ego", ego)
+        _log_state_quality("InterceptTarget.enemy", target)
         metrics = _update_target_metrics(blackboard, ego, target)
         aim_point = lead_intercept_point(
             ego,
@@ -671,6 +902,8 @@ class GetBehindTarget(F16Action):
             self.status = Status.FAILURE
             return self.status
 
+        _log_state_quality("GetBehindTarget.ego", ego)
+        _log_state_quality("GetBehindTarget.enemy", target)
         metrics = _update_target_metrics(blackboard, ego, target)
         anchor_solution = rear_anchor_solution(
             target,
@@ -730,6 +963,8 @@ class FollowTarget(F16Action):
             self.status = Status.FAILURE
             return self.status
 
+        _log_state_quality("FollowTarget.ego", ego)
+        _log_state_quality("FollowTarget.enemy", target)
         metrics = _update_target_metrics(blackboard, ego, target)
         anchor_solution = rear_anchor_solution(
             target,

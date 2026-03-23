@@ -40,10 +40,10 @@
         </ReactiveFallback>
       </ReactiveSequence>
 
-      <!-- Long-range behaviour: commit to intercept only when the target is still far away. -->
+      <!-- Default airborne pursuit: if the target is valid but not yet in close range,
+           keep driving an intercept instead of falling into a passive reposition gap. -->
       <ReactiveSequence>
         <IsAirborne/>
-        <TargetFar/>
         <InterceptTarget/>
       </ReactiveSequence>
 

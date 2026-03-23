@@ -72,7 +72,7 @@ private:
     float SendRateHz = 20.0f;
     FString EgoLogicalActorId = TEXT("F16_UAV_1");
     FString PlayerLogicalActorId = TEXT("M_F16");
-    FString EgoActorNameHint = TEXT("F16_UAV_1");
+    FString EgoActorNameHint = TEXT("F16_UAV");
     FString PlayerActorNameHint = TEXT("M_F16");
     double SendAccumulatorS = 0.0;
     int32 SentPacketCount = 0;
