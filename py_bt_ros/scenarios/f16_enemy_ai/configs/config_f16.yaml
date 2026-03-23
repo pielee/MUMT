@@ -1,0 +1,262 @@
+scenario:
+  environment: scenarios.f16_enemy_ai
+
+agent:
+  namespaces: "/enemy_f16_1"
+  behavior_tree_xml: "behavior_trees/default_bt.xml"
+
+runtime:
+  interface_class: scenarios.f16_enemy_ai.interfaces.f16_interface.F16Interface
+
+bt_runner:
+  bt_tick_rate: 20.0
+  bt_visualiser:
+    enabled: False
+    screen_width: 720
+    screen_height: 720
+  profiling_mode: False
+
+f16_ai:
+  airborne_altitude_m: 20.0
+  safe_altitude_m: 1500.0
+  far_range_m: 6000.0
+  in_range_m: 2500.0
+  follow_distance_m: 550.0
+  rear_aspect_angle_deg: 45.0
+  logging:
+    enabled: true
+  recovery:
+    stall_speed_mps: 80.0
+    stall_clear_speed_mps: 92.0
+    stall_aoa_deg: 14.0
+    stall_clear_aoa_deg: 11.0
+    low_altitude_m: 250.0
+    max_bank_deg: 75.0
+    max_pitch_deg: 35.0
+    low_altitude_pitch_deg: 10.0
+    stall_nose_down_pitch_deg: -8.0
+    stall_low_altitude_pitch_deg: -2.0
+    pitch_unload_deg: -3.0
+    aoa_to_elevator_gain: 0.015
+    bank_level_gain: 0.02
+    rudder_level_gain: 0.006
+    max_elevator_cmd: 0.45
+    max_aileron_cmd: 0.45
+    max_rudder_cmd: 0.25
+    stall_throttle: 1.0
+  takeoff:
+    rotate_speed_mps: 82.0
+    rotate_elevator: 0.55
+    runway_heading_deg: 90.0
+    takeoff_throttle_cmd: 0.90
+    takeoff_pitch_cmd: 0.15
+    takeoff_roll_cmd: 0.0
+    takeoff_yaw_cmd: 0.0
+    takeoff_exit_altitude_m: 80.0
+    takeoff_exit_speed_mps: 90.0
+  climb:
+    climb_pitch_deg: 16.0
+    throttle: 1.0
+    turn_initiation_altitude_m: 400.0
+    max_heading_change_deg_below_turn_altitude: 10.0
+    max_heading_change_deg_during_climb: 20.0
+  intercept:
+    throttle: 1.0
+    max_pitch_deg: 18.0
+    min_lookahead_s: 0.5
+    max_lookahead_s: 6.0
+    min_closure_speed_mps: 120.0
+  get_behind:
+    distance_m: 900.0
+    lookahead_s: 1.4
+    altitude_offset_m: 0.0
+    max_pitch_deg: 20.0
+    min_target_forward_speed_mps: 25.0
+    base_throttle: 0.95
+    distance_gain: 0.00012
+    speed_gain: 0.003
+    min_throttle: 0.70
+    max_throttle: 1.0
+  follow:
+    lookahead_s: 0.8
+    altitude_offset_m: 0.0
+    max_pitch_deg: 16.0
+    anchor_tolerance_m: 250.0
+    min_target_forward_speed_mps: 25.0
+    base_throttle: 0.82
+    distance_gain: 0.00010
+    speed_gain: 0.0035
+    min_throttle: 0.55
+    max_throttle: 1.0
+  reacquire:
+    max_memory_age_s: 8.0
+    lookahead_s: 2.0
+    max_prediction_s: 8.0
+    max_pitch_deg: 15.0
+    throttle: 0.90
+  pursue:
+    throttle: 0.92
+    close_range_m: 1200.0
+    close_throttle: 0.8
+    max_pitch_deg: 22.0
+  controller:
+    heading_to_aileron_gain: 0.018
+    roll_damping_gain: 0.015
+    pitch_to_elevator_gain: 0.04
+    rudder_gain: 0.006
+    max_heading_error_deg: 35.0
+    max_pitch_error_deg: 12.0
+    max_aileron_cmd: 0.45
+    max_elevator_cmd: 0.40
+    max_rudder_cmd: 0.25
+
+f16_interface:
+  backend_mode: external
+  backend_adapter_class: scenarios.f16_enemy_ai.interfaces.udp_adapter.F16UdpBridgeAdapter
+  # Current Unreal UDP receiver expects csv4 in the order:
+  #   roll,pitch,yaw,throttle
+  # where:
+  #   roll <- aileron, pitch <- elevator, yaw <- rudder
+  # Use the logical ids emitted by the Unreal UDP state sender.
+  # These are mapped to the real aircraft:
+  #   ego   -> F16_UAV_1
+  #   enemy -> M_F16
+  # The current Unreal UDP command receiver still ignores actor_id and controls the already-bound hostile pawn.
+  ego_actor_id: "F16_UAV_1"
+  enemy_actor_id: "M_F16"
+  strict_external_adapter: true
+  strict_state_validation: true
+  require_actor_ids_in_external: true
+  require_command_ack: true
+  max_state_age_s: 0.5
+  altitude_consistency_tolerance_m: 5.0
+  debug_logging: false
+  command_logging: true
+  state_logging: false
+  state_log_interval_s: 1.0
+  movement_check_interval_s: 1.0
+  command_limits:
+    default:
+      max_roll_cmd: 0.15
+      max_pitch_cmd: 0.10
+      max_yaw_cmd: 0.10
+      min_throttle_cmd: 0.60
+      max_throttle_cmd: 0.85
+    # Protected departure profile: use this until the aircraft is safely airborne.
+    takeoff:
+      max_roll_cmd: 0.02
+      max_pitch_cmd: 0.18
+      max_yaw_cmd: 0.02
+      min_throttle_cmd: 0.85
+      max_throttle_cmd: 0.92
+    climb:
+      max_roll_cmd: 0.04
+      max_pitch_cmd: 0.12
+      max_yaw_cmd: 0.03
+      min_throttle_cmd: 0.85
+      max_throttle_cmd: 0.90
+    # Common pursuit profile: intercept / get-behind / follow / reacquire merge this
+    # before their node-specific overrides.
+    pursuit:
+      max_roll_cmd: 0.22
+      max_pitch_cmd: 0.15
+      max_yaw_cmd: 0.12
+      min_throttle_cmd: 0.85
+      max_throttle_cmd: 0.95
+    intercept:
+      max_roll_cmd: 0.24
+      max_pitch_cmd: 0.16
+      max_yaw_cmd: 0.12
+      min_throttle_cmd: 0.88
+      max_throttle_cmd: 0.95
+    get_behind:
+      max_roll_cmd: 0.22
+      max_pitch_cmd: 0.15
+      max_yaw_cmd: 0.12
+      min_throttle_cmd: 0.86
+      max_throttle_cmd: 0.94
+    follow:
+      max_roll_cmd: 0.20
+      max_pitch_cmd: 0.14
+      max_yaw_cmd: 0.10
+      min_throttle_cmd: 0.85
+      max_throttle_cmd: 0.92
+    reacquire:
+      max_roll_cmd: 0.18
+      max_pitch_cmd: 0.12
+      max_yaw_cmd: 0.10
+      min_throttle_cmd: 0.85
+      max_throttle_cmd: 0.93
+    recover:
+      max_roll_cmd: 0.10
+      max_pitch_cmd: 0.08
+      max_yaw_cmd: 0.06
+      min_throttle_cmd: 0.68
+      max_throttle_cmd: 0.82
+    safe_mode:
+      max_roll_cmd: 0.00
+      max_pitch_cmd: 0.05
+      max_yaw_cmd: 0.00
+      min_throttle_cmd: 0.68
+      max_throttle_cmd: 0.75
+      moderate_throttle_cmd: 0.72
+  ground_ops:
+    enabled: true
+    auto_engine_start: true
+    auto_release_brakes: true
+    brake_release_throttle_threshold: 0.05
+    released_wheel_brake: 0.0
+    hold_parking_brake_when_idle: false
+    idle_wheel_brake: 0.0
+    keep_gear_down_on_ground: true
+    retract_gear_in_air: false
+    force_control_enabled: true
+    movement_check_throttle_threshold: 0.35
+    movement_check_speed_threshold_mps: 3.0
+  udp_adapter:
+    host: "127.0.0.1"
+    command_port: 5005
+    state_host: "0.0.0.0"
+    state_port: 5007
+    require_states_array: true
+    expected_state_source: "PyAircraftUdpStateSenderSubsystem"
+    encoding: "utf-8"
+    state_socket_timeout_s: 0.001
+    enable_state_listener: true
+    allow_initial_state_fallback: true
+    debug_logging: false
+  ego_initial_state:
+    position_m:
+      x: 0.0
+      y: 0.0
+      z: 0.0
+    yaw_deg: 90.0
+    pitch_deg: 0.0
+    roll_deg: 0.0
+    airspeed_mps: 0.0
+    altitude_m: 0.0
+    vertical_speed_mps: 0.0
+    on_ground: true
+  enemy_initial_state:
+    position_m:
+      x: 9000.0
+      y: 1000.0
+      z: 2200.0
+    yaw_deg: -170.0
+    pitch_deg: 0.0
+    roll_deg: 0.0
+    airspeed_mps: 230.0
+    altitude_m: 2200.0
+    vertical_speed_mps: 0.0
+    on_ground: false
+  mock_backend:
+    max_speed_mps: 320.0
+    min_speed_mps: 55.0
+    rotate_speed_mps: 82.0
+    rotation_rate_degps: 65.0
+    pitch_rate_degps: 30.0
+    target_cruise_speed_mps: 230.0
+    target_turn_rate_degps: 1.5
+  # External adapter payload notes:
+  # - altitude_m should already be converted to world-up altitude, not ASL/MSL.
+  # - velocity_mps should be world-frame velocity because Intercept uses lead pursuit.

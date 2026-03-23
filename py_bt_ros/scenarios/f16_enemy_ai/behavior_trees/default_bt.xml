@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<root BTCPP_format="4">
+  <BehaviorTree ID="f16_enemy_default">
+    <ReactiveFallback>
+      <!-- Emergency recovery always preempts all tactical branches. -->
+      <ReactiveSequence>
+        <IsStalling/>
+        <Recover/>
+      </ReactiveSequence>
+
+      <!-- Keep takeoff isolated so ground-roll / liftoff logic cannot be masked by target logic. -->
+      <ReactiveSequence>
+        <NeedsTakeoff/>
+        <Takeoff/>
+      </ReactiveSequence>
+
+      <!-- After liftoff, protect the departure until safe altitude is secured. -->
+      <ReactiveSequence>
+        <NeedsClimbToSafeAltitude/>
+        <ClimbToSafeAltitude/>
+      </ReactiveSequence>
+
+      <!-- Only try reacquire when airborne and the live target is actually lost. -->
+      <ReactiveSequence>
+        <IsAirborne/>
+        <TargetLost/>
+        <ReacquireTarget/>
+      </ReactiveSequence>
+
+      <!-- Close-range behaviour: either stay behind the target or manoeuvre into the rear aspect. -->
+      <ReactiveSequence>
+        <IsAirborne/>
+        <TargetInRange/>
+        <ReactiveFallback>
+          <ReactiveSequence>
+            <IsBehindTarget/>
+            <FollowTarget/>
+          </ReactiveSequence>
+          <GetBehindTarget/>
+        </ReactiveFallback>
+      </ReactiveSequence>
+
+      <!-- Long-range behaviour: commit to intercept only when the target is still far away. -->
+      <ReactiveSequence>
+        <IsAirborne/>
+        <TargetFar/>
+        <InterceptTarget/>
+      </ReactiveSequence>
+
+      <!-- Everything else falls back to safe reposition while remaining airborne. -->
+      <ReactiveSequence>
+        <IsAirborne/>
+        <Reposition/>
+      </ReactiveSequence>
+    </ReactiveFallback>
+  </BehaviorTree>
+
+  <TreeNodesModel>
+    <Condition ID="IsAirborne" editable="true"/>
+    <Condition ID="NeedsTakeoff" editable="true"/>
+    <Condition ID="NeedsClimbToSafeAltitude" editable="true"/>
+    <Condition ID="IsStalling" editable="true"/>
+    <Condition ID="TargetLost" editable="true"/>
+    <Condition ID="TargetFar" editable="true">
+      <input_port name="range_m" default="6000.0"/>
+    </Condition>
+    <Condition ID="TargetInRange" editable="true">
+      <input_port name="range_m" default="2500.0"/>
+    </Condition>
+    <Condition ID="IsBehindTarget" editable="true"/>
+    <Action ID="Takeoff" editable="true"/>
+    <Action ID="ClimbToSafeAltitude" editable="true"/>
+    <Action ID="ReacquireTarget" editable="true"/>
+    <Action ID="InterceptTarget" editable="true"/>
+    <Action ID="GetBehindTarget" editable="true"/>
+    <Action ID="FollowTarget" editable="true"/>
+    <Action ID="Recover" editable="true"/>
+    <Action ID="Reposition" editable="true"/>
+  </TreeNodesModel>
+</root>
