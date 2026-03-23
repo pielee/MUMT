@@ -1,4 +1,4 @@
-#pragma once
+ï»¿#pragma once
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
@@ -21,48 +21,53 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-    // ===== ¼ö½Å =====
+    // ===== ìˆ˜ì‹  =====
     bool StartUDPReceiver();
     void StopUDPReceiver();
     void ReceiveUDPData();
     void ParseCommand(const FString& Message);
 
-    // ===== ¼Û½Å =====
+    // ===== ì†¡ì‹  =====
     bool StartUDPSender();
     void StopUDPSender();
     void SendStateToPython();
 
-    // ===== Pawn Ã³¸® =====
+    // ===== Pawn ì²˜ë¦¬ =====
     APawn* FindTargetPawn();
     bool SetBlueprintNumber(APawn* Pawn, const FName VarName, double Value);
 
 private:
-    // ¼ö½Å¿ë ¼ÒÄÏ
+    // ìˆ˜ì‹ ìš© ì†Œì¼“
     FSocket* ListenSocket = nullptr;
 
-    // ¼Û½Å¿ë ¼ÒÄÏ
+    // ì†¡ì‹ ìš© ì†Œì¼“
     FSocket* SendSocket = nullptr;
 
-    // Python ÁÖ¼Ò
+    // Python ì£¼ì†Œ
     TSharedPtr<FInternetAddr> PythonAddr;
 
-    // Ä³½ÃµÈ ´ë»ó Pawn
+    // ìºì‹œëœ ëŒ€ìƒ Pawn
     APawn* CachedTargetPawn = nullptr;
 
-    // »óÅÂ ¼Û½Å Å¸ÀÌ¸Ó
+    // ìƒíƒœ ì†¡ì‹  íƒ€ì´ë¨¸
     float StateSendAccumulator = 0.0f;
 
-    // ¼Óµµ °è»ê¿ë ÀÌÀü »óÅÂ
+    // ì†ë„ ê³„ì‚°ìš© ì´ì „ ìƒíƒœ
     FVector PrevLocation = FVector::ZeroVector;
     bool bHasPrevLocation = false;
     double PrevStateSendTime = 0.0;
 
 public:
-    // ===== ¼ö½Å ¼³Á¤ =====
+    // ===== ìˆ˜ì‹  ì„¤ì • =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Receiver")
     int32 ListenPort = 5005;
 
-    // ===== ¼Û½Å ¼³Á¤ =====
+    // ===== ì†¡ì‹  ì„¤ì • =====
+    // Disable the legacy single-aircraft telemetry sender when a separate
+    // multi-aircraft state bridge is active, so UDP 5006 is not polluted.
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Sender")
+    bool bEnableStateSender = false;
+
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Sender")
     FString PythonIP = TEXT("127.0.0.1");
 
@@ -72,11 +77,11 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Sender")
     float StateSendInterval = 0.05f; // 20Hz
 
-    // ===== Á¦¾î ´ë»ó Pawn =====
+    // ===== ì œì–´ ëŒ€ìƒ Pawn =====
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "UDP|Target")
     FString TargetPawnName = TEXT("F16_UAV");
 
-    // ===== ¼ö½ÅµÈ Á¶Á¾°ª =====
+    // ===== ìˆ˜ì‹ ëœ ì¡°ì¢…ê°’ =====
     UPROPERTY(BlueprintReadOnly, Category = "UDP|Control")
     float Roll = 0.0f;
 

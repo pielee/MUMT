@@ -1,4 +1,4 @@
-#include "UDPControlReceiver.h"
+ï»¿#include "UDPControlReceiver.h"
 
 #include "Engine/Engine.h"
 #include "HAL/RunnableThread.h"
@@ -30,13 +30,20 @@ void AUDPControlReceiver::BeginPlay()
         UE_LOG(LogTemp, Error, TEXT("[UDP] Failed to start receiver"));
     }
 
-    if (StartUDPSender())
+    if (bEnableStateSender)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[UDP] Sender started -> %s:%d"), *PythonIP, PythonStatePort);
+        if (StartUDPSender())
+        {
+            UE_LOG(LogTemp, Warning, TEXT("[UDP] Sender started -> %s:%d"), *PythonIP, PythonStatePort);
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[UDP] Failed to start sender"));
+        }
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("[UDP] Failed to start sender"));
+        UE_LOG(LogTemp, Warning, TEXT("[UDP] Legacy state sender disabled; receiver-only mode active on %s"), *GetName());
     }
 
     CachedTargetPawn = FindTargetPawn();
@@ -57,10 +64,10 @@ void AUDPControlReceiver::Tick(float DeltaTime)
 {
     Super::Tick(DeltaTime);
 
-    // 1) Python -> Unreal Á¦¾î ¼ö½Å
+    // 1) Python -> Unreal ì œì–´ ìˆ˜ì‹ 
     ReceiveUDPData();
 
-    // 2) ´ë»ó Pawn È®º¸
+    // 2) ëŒ€ìƒ Pawn í™•ë³´
     if (!CachedTargetPawn || !IsValid(CachedTargetPawn))
     {
         CachedTargetPawn = FindTargetPawn();
@@ -70,7 +77,7 @@ void AUDPControlReceiver::Tick(float DeltaTime)
         }
     }
 
-    // 3) ¼ö½Å°ªÀ» Blueprint º¯¼ö¿¡ ¹Ý¿µ
+    // 3) ìˆ˜ì‹ ê°’ì„ Blueprint ë³€ìˆ˜ì— ë°˜ì˜
     const bool bRollOk = SetBlueprintNumber(CachedTargetPawn, TEXT("UDP_Roll"), Roll);
     const bool bPitchOk = SetBlueprintNumber(CachedTargetPawn, TEXT("UDP_Pitch"), Pitch);
     const bool bYawOk = SetBlueprintNumber(CachedTargetPawn, TEXT("UDP_Yaw"), Yaw);
@@ -88,12 +95,15 @@ void AUDPControlReceiver::Tick(float DeltaTime)
             *CachedTargetPawn->GetName());
     }
 
-    // 4) Unreal -> Python »óÅÂ ¼Û½Å
-    StateSendAccumulator += DeltaTime;
-    if (StateSendAccumulator >= StateSendInterval)
+    // 4) Unreal -> Python ìƒíƒœ ì†¡ì‹ 
+    if (bEnableStateSender)
     {
-        StateSendAccumulator = 0.0f;
-        SendStateToPython();
+        StateSendAccumulator += DeltaTime;
+        if (StateSendAccumulator >= StateSendInterval)
+        {
+            StateSendAccumulator = 0.0f;
+            SendStateToPython();
+        }
     }
 }
 
